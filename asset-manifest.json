@@ -1,0 +1,21 @@
+{
+  "manifestVersion": 1,
+  "generatedBy": "manual",
+  "notes": "Optional machine-readable asset index for shared consumers.",
+  "groups": {
+    "brand": [],
+    "css": [],
+    "js": [],
+    "images": [],
+    "icons": [],
+    "fonts": [],
+    "manifests": [],
+    "vendor": []
+  },
+  "websites": {
+    "theinfo": [],
+    "networkluki": [],
+    "ipconfig": [],
+    "lukihackwell": []
+  }
+}

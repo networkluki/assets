@@ -1,0 +1,89 @@
+name: Asset Validation
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  validate-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate filenames (lowercase, numbers, hyphen, slash, dot)
+        run: |
+          set -euo pipefail
+          invalid=$(find . -type f \
+            -not -path './.git/*' \
+            -not -path './.github/*' \
+            | sed 's#^\./##' \
+            | grep -E '[A-Z ]|[^a-z0-9._/\-]' || true)
+          if [ -n "$invalid" ]; then
+            echo "Invalid filenames found:" >&2
+            echo "$invalid" >&2
+            exit 1
+          fi
+
+      - name: Check oversized assets (>2MB)
+        run: |
+          set -euo pipefail
+          large=$(find . -type f \
+            \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.gif' -o -name '*.webp' -o -name '*.avif' -o -name '*.svg' -o -name '*.woff' -o -name '*.woff2' \) \
+            -size +2M || true)
+          if [ -n "$large" ]; then
+            echo "Oversized assets found:" >&2
+            echo "$large" >&2
+            exit 1
+          fi
+
+      - name: Detect duplicate assets by hash
+        run: |
+          set -euo pipefail
+          files=$(find . -type f \
+            \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.gif' -o -name '*.webp' -o -name '*.avif' -o -name '*.svg' -o -name '*.woff' -o -name '*.woff2' \))
+          if [ -n "$files" ]; then
+            dupes=$(echo "$files" | xargs -r sha256sum | sort | awk 'seen[$1]++ {print}')
+            if [ -n "$dupes" ]; then
+              echo "Potential duplicate assets found:" >&2
+              echo "$dupes" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Basic SVG safety scan
+        run: |
+          set -euo pipefail
+          if ls **/*.svg >/dev/null 2>&1; then
+            bad=$(grep -RInE '<script|onload=|onerror=|javascript:' -- **/*.svg || true)
+            if [ -n "$bad" ]; then
+              echo "Unsafe SVG patterns found:" >&2
+              echo "$bad" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Check local links in docs
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in README.md index.html; do
+            [ -f "$f" ] || continue
+            links=$(grep -Eo '(href=")([^"]+)|(\]\()([^\)]+)' "$f" | sed -E 's/^href="//; s/^\]\(//')
+            while IFS= read -r link; do
+              [ -z "$link" ] && continue
+              case "$link" in
+                http*|mailto:*|#*|<*|*'`'*) continue ;;
+              esac
+              path=${link%%#*}
+              [ -z "$path" ] && continue
+              if [ ! -e "$path" ]; then
+                echo "Missing local link target in $f: $link" >&2
+                missing=1
+              fi
+            done <<< "$links"
+          done
+          [ "$missing" -eq 0 ]
